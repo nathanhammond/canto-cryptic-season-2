@@ -1,7 +1,7 @@
 import csv
 import hashlib
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import cv2 as cv
@@ -15,7 +15,12 @@ MISSING_DIR = Path("missing_symbols")
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 TEMPLATE_HEIGHT = 163
 BASELINE_OFFSET = 77
-MATCH_THRESHOLD = 0.80
+MATCH_THRESHOLD = 0.76
+L_MATCH_THRESHOLD = 0.55
+MAX_TEMPLATE_OVERLAP = 24
+L_WHITESPACE_WIDTH = 8
+MISSING_CONTEXT = 24
+MAX_REVIEW_CANDIDATES = 32
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,11 @@ class Candidate:
     x: int
     y: int
     score: float
+    draw_x: int | None = None
+
+    @property
+    def start(self):
+        return self.x if self.draw_x is None else self.draw_x
 
     @property
     def end(self):
@@ -117,7 +127,8 @@ def candidates_for_row(gray, templates, row_top, content_start, content_end):
         local_max = scores == cv.dilate(
             scores.reshape(1, -1), np.ones((1, 7), np.uint8)
         ).reshape(-1)
-        xs = np.where((scores >= MATCH_THRESHOLD) & local_max)[0]
+        threshold = L_MATCH_THRESHOLD if template.name == "l" else MATCH_THRESHOLD
+        xs = np.where((scores >= threshold) & local_max)[0]
         for x in xs:
             if x + template.width < content_start - 10 or x > content_end + 10:
                 continue
@@ -137,17 +148,28 @@ def ink_area(ink, row_top, start, end):
     return int(np.count_nonzero(ink[y0:y1, x0:x1]))
 
 
+def follows_whitespace(candidate, cursor, content_start):
+    if candidate.template.name != "l":
+        return True
+    return cursor <= content_start + 2 or candidate.x >= cursor + L_WHITESPACE_WIDTH
+
+
 def greedy_row(candidates, ink, row_top, content_start, content_end):
     matches = []
     missing = []
     cursor = content_start
     candidates = sorted(candidates, key=lambda item: (item.x, -item.score))
 
+    def eligible(candidate):
+        return follows_whitespace(candidate, cursor, content_start)
+
     while cursor < content_end:
         nearby = [
             candidate
             for candidate in candidates
-            if cursor - 8 <= candidate.x <= cursor + 8 and candidate.end > cursor
+            if cursor - MAX_TEMPLATE_OVERLAP <= candidate.x <= cursor + 8
+            and candidate.end > cursor
+            and eligible(candidate)
         ]
         if nearby:
             # Exact full symbols score higher than contained sub-shapes. Prefer
@@ -157,12 +179,14 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 candidate for candidate in nearby if candidate.score >= best_score - 0.015
             ]
             best = max(tied, key=lambda item: (item.template.width, item.score))
-            matches.append(best)
+            matches.append(replace(best, draw_x=max(cursor, best.x)))
             cursor = max(cursor + 1, best.end)
             continue
 
         future = [
-            candidate for candidate in candidates if candidate.x > cursor + 8
+            candidate
+            for candidate in candidates
+            if candidate.x > cursor + 8 and eligible(candidate)
         ]
         next_x = min((candidate.x for candidate in future), default=content_end)
         if next_x - cursor >= 14 and ink_area(ink, row_top, cursor, next_x) >= 60:
@@ -175,14 +199,25 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
 def crop_missing(image, ink, row_top, start, end):
     y0 = max(0, row_top)
     y1 = min(image.shape[0], row_top + TEMPLATE_HEIGHT)
-    x0 = max(0, start)
-    x1 = min(image.shape[1], end)
-    mask = ink[y0:y1, x0:x1]
+    core_x0 = max(0, start)
+    core_x1 = min(image.shape[1], end)
+    mask = ink[y0:y1, core_x0:core_x1]
     if end - start < 14 or np.count_nonzero(mask) < 60:
         return None
     ys, xs = np.where(mask)
-    tight = mask[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
-    return tight
+    core = mask[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+    if core.shape[0] < 24:
+        return None
+
+    review_x0 = max(0, core_x0 - MISSING_CONTEXT)
+    review_x1 = min(image.shape[1], core_x1 + MISSING_CONTEXT)
+    review = ink[y0:y1, review_x0:review_x1]
+    review_ys, review_xs = np.where(review)
+    review = review[
+        review_ys.min() : review_ys.max() + 1,
+        review_xs.min() : review_xs.max() + 1,
+    ]
+    return review, core
 
 
 def normalize(mask, size=96):
@@ -204,7 +239,7 @@ def similarity(left, right):
     return float(cv.matchTemplate(left, right, cv.TM_CCOEFF_NORMED)[0, 0])
 
 
-def process_puzzle(path, templates, confirmed=None):
+def process_puzzle(path, templates):
     image = cv.imread(os.fspath(path), cv.IMREAD_COLOR)
     if image is None:
         raise ValueError(f"could not read puzzle: {path}")
@@ -214,7 +249,6 @@ def process_puzzle(path, templates, confirmed=None):
     baselines = detect_baselines(ink)
     all_matches = []
     all_missing = []
-    confirmed_norm = normalize(confirmed) if confirmed is not None else None
 
     for line_number, baseline in enumerate(baselines, 1):
         row_top = baseline - BASELINE_OFFSET
@@ -233,18 +267,17 @@ def process_puzzle(path, templates, confirmed=None):
         )
         all_matches.extend(matches)
         for start, end in missing:
-            crop = crop_missing(image, ink, row_top, start, end)
-            if crop is not None:
-                crop_norm = normalize(crop)
-                if confirmed_norm is not None and similarity(crop_norm, confirmed_norm) < 0.68:
-                    continue
+            crops = crop_missing(image, ink, row_top, start, end)
+            if crops is not None:
+                review_crop, core_crop = crops
+                crop_norm = normalize(core_crop)
                 all_missing.append(
                     {
                         "day": natural_key(path),
                         "line": line_number,
                         "x": start,
                         "y": row_top,
-                        "mask": crop,
+                        "mask": review_crop,
                         "norm": crop_norm,
                     }
                 )
@@ -259,7 +292,7 @@ def process_puzzle(path, templates, confirmed=None):
     for match in all_matches:
         cv.rectangle(
             annotated,
-            (match.x, match.y),
+            (match.start, match.y),
             (match.end, match.y + match.template.height),
             match.template.color,
             2,
@@ -267,7 +300,7 @@ def process_puzzle(path, templates, confirmed=None):
         cv.putText(
             annotated,
             match.template.name,
-            (match.x + 2, match.y + 15),
+            (match.start + 2, match.y + 15),
             cv.FONT_HERSHEY_SIMPLEX,
             0.42,
             match.template.color,
@@ -285,25 +318,10 @@ def process_puzzle(path, templates, confirmed=None):
     return all_missing
 
 
-def write_missing(candidates, confirmed):
+def write_missing(candidates):
     groups = []
-    if confirmed is not None:
-        groups.append(
-            {
-                "mask": confirmed,
-                "norm": normalize(confirmed),
-                "sources": ["confirmed by user"],
-            }
-        )
 
     for candidate in candidates:
-        if confirmed is not None:
-            source = (
-                f"day {candidate['day']} line={candidate['line']} "
-                f"x={candidate['x']} y={candidate['y']}"
-            )
-            groups[0]["sources"].append(source)
-            continue
         group = next(
             (
                 item
@@ -327,6 +345,10 @@ def write_missing(candidates, confirmed):
         else:
             group["sources"].append(source)
 
+    total_groups = len(groups)
+    groups.sort(key=lambda item: len(item["sources"]), reverse=True)
+    groups = groups[:MAX_REVIEW_CANDIDATES]
+
     MISSING_DIR.mkdir(exist_ok=True)
     for path in MISSING_DIR.glob("candidate_*.png"):
         path.unlink()
@@ -342,33 +364,20 @@ def write_missing(candidates, confirmed):
         output = np.zeros((mask.shape[0] + 16, mask.shape[1] + 16, 4), np.uint8)
         output[8 : 8 + mask.shape[0], 8 : 8 + mask.shape[1]][mask] = (0, 0, 0, 255)
         cv.imwrite(os.fspath(MISSING_DIR / name), output)
-        occurrence_count = sum(
-            not source.startswith("confirmed") for source in group["sources"]
-        )
-        rows.append((name, occurrence_count, "; ".join(group["sources"])))
+        rows.append((name, len(group["sources"]), "; ".join(group["sources"])))
 
     with (MISSING_DIR / "index.csv").open("w", newline="") as handle:
-        writer = csv.writer(handle)
+        writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(("file", "occurrences", "sources"))
         writer.writerows(rows)
-    print(f"missing symbols: {len(groups)} unique candidates")
-
-
-def load_confirmed():
-    path = MISSING_DIR / "candidate_01.png"
-    image = cv.imread(os.fspath(path), cv.IMREAD_UNCHANGED)
-    if image is None or image.ndim != 3 or image.shape[2] != 4:
-        return None
-    mask = image[:, :, 3] > 0
-    ys, xs = np.where(mask)
-    if not len(xs):
-        return None
-    return mask[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1]
+    print(
+        f"missing symbols: {len(groups)} review candidates "
+        f"from {total_groups} residual shape groups"
+    )
 
 
 def main():
     templates = load_templates()
-    confirmed = load_confirmed()
     puzzles = [
         path
         for path in PUZZLE_DIR.iterdir()
@@ -377,8 +386,8 @@ def main():
     puzzles.sort(key=natural_key)
     missing = []
     for path in puzzles:
-        missing.extend(process_puzzle(path, templates, confirmed))
-    write_missing(missing, confirmed)
+        missing.extend(process_puzzle(path, templates))
+    write_missing(missing)
 
 
 if __name__ == "__main__":
