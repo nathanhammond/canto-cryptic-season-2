@@ -3,72 +3,72 @@
     "day": 9,
     "line": 7,
     "position": 21,
-    "context": "4xyscvv",
-    "from": "s",
-    "to": "8"
+    "context": "v2of0cc",
+    "from": "f",
+    "to": "u"
   },
   {
     "day": 18,
     "line": 7,
     "position": 23,
-    "context": "r3ksϲgi",
-    "from": "s",
+    "context": "+tgfy1a",
+    "from": "f",
     "to": "__segmentation__"
   },
   {
     "day": 12,
     "line": 2,
     "position": 10,
-    "context": "jkspcda",
-    "from": "p",
-    "to": "8"
+    "context": "egf[0b4",
+    "from": "[",
+    "to": "u"
   },
   {
     "day": 20,
     "line": 6,
     "position": 17,
-    "context": "zjdpcwb",
-    "from": "p",
-    "to": "8"
+    "context": "deb[0n6",
+    "from": "[",
+    "to": "u"
   },
   {
     "day": 5,
     "line": 6,
     "position": 9,
-    "context": "fiptmnz",
-    "from": "t",
+    "context": "3a[mr]d",
+    "from": "m",
     "to": "__segmentation__"
   },
   {
     "day": 7,
     "line": 5,
     "position": 21,
-    "context": "dgc84yd",
-    "from": "8",
-    "to": "p"
+    "context": "b10uvob",
+    "from": "u",
+    "to": "["
   },
   {
     "day": 7,
     "line": 1,
     "position": 1,
-    "context": "8jx6",
-    "from": "8",
-    "to": "p"
+    "context": "ue2p",
+    "from": "u",
+    "to": "["
   },
   {
     "day": 7,
     "line": 12,
     "position": 3,
-    "context": "jf6qs-",
-    "from": "6",
+    "context": "e3pifj",
+    "from": "p",
     "to": "__segmentation__"
   },
   {
     "day": 29,
     "line": 2,
     "position": 1,
-    "context": "6ksz",
-    "from": "6",
+    "context": "pgfd",
+    "from": "p",
     "to": "__segmentation__"
   }
 ]

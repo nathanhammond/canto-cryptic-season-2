@@ -6,6 +6,7 @@ import os
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from pathlib import Path
+from urllib.parse import quote
 
 import cv2 as cv
 import numpy as np
@@ -26,30 +27,30 @@ BASELINE_OFFSET = 77
 MATCH_THRESHOLD = 0.76
 L_MATCH_THRESHOLD = 0.55
 MATCH_THRESHOLD_BY_TEMPLATE = {
-    "5": 0.74,
-    "6": 0.60,
-    "7": 0.74,
-    "8": 0.70,
-    "h": 0.68,
-    "j": 0.67,
-    "p": 0.70,
-    "s": 0.57,
-    "t": 0.72,
+    "q": 0.74,
+    "p": 0.60,
     "w": 0.74,
-    "ϲ": 0.81,
+    "u": 0.70,
+    "l": 0.68,
+    "e": 0.67,
+    "[": 0.70,
+    "f": 0.57,
+    "m": 0.72,
+    "n": 0.74,
+    "y": 0.81,
 }
 SCORE_TIE_TOLERANCE = 0.015
 NORMAL_S_MATCH_THRESHOLD = 0.70
 FULL_GLYPH_SCORE_MARGIN = 0.08
 MIN_NEW_SYMBOL_WIDTH = 12
-MIN_NEW_WIDTH_BY_TEMPLATE = {"t": 11, "u": 11}
-MIN_NEW_WIDTH_AFTER = {("p", "v"): 7}
-OVERLAP_PREFIX_AFTER = {("p", "t"), ("p", "v")}
-CONTAINED_STROKE_TEMPLATES = {"-", "z"}
-FORWARD_TOLERANCE_BY_TEMPLATE = {"3": 10}
+MIN_NEW_WIDTH_BY_TEMPLATE = {"m": 11, "!": 11}
+MIN_NEW_WIDTH_AFTER = {("[", "c"): 7}
+OVERLAP_PREFIX_AFTER = {("[", "m"), ("[", "c")}
+CONTAINED_STROKE_TEMPLATES = {"j", "d"}
+FORWARD_TOLERANCE_BY_TEMPLATE = {"t": 10}
 MAX_TEMPLATE_OVERLAP = 24
-LEFT_SHARED_STROKE_BY_TEMPLATE = {"h": 8, "3": 20}
-LEFT_OVERLAP_TOLERANCE_BY_TEMPLATE = {"h": 12, "3": 8}
+LEFT_SHARED_STROKE_BY_TEMPLATE = {"l": 8, "t": 20}
+LEFT_OVERLAP_TOLERANCE_BY_TEMPLATE = {"l": 12, "t": 8}
 L_WHITESPACE_WIDTH = 8
 MISSING_CONTEXT = 24
 MAX_REVIEW_CANDIDATES = 32
@@ -70,21 +71,21 @@ PASSAGE_METADATA = {
     13: ("書面語（粵語讀音）", "SWC"),
     14: ("古詩詞（1900年前寫作）", "Classical"),
     15: ("書面語（粵語讀音）", "SWC"),
-    16: ("白話文", "SWC"),
+    16: ("白話文", "Cantonese"),
     17: ("書面語（粵語讀音）", "SWC"),
-    18: ("白話文", "SWC"),
+    18: ("白話文", "Cantonese"),
     19: ("新詩（節錄）", "New Poetry"),
     20: ("專欄文章 | 書面語（粵語讀音）", "SWC"),
     21: ("百科全書文章 | 書面語（粵語讀音）", "SWC"),
-    22: ("網路文章 | 白話文", "SWC"),
+    22: ("網路文章 | 白話文", "Cantonese"),
     23: ("網絡小說 | 書面語（粵語讀音）", "SWC"),
     24: ("五言絕句 | 古詩詞（1900年前寫作）", "Classical"),
     25: ("小說 | 書面語（粵語讀音）", "SWC"),
-    26: ("小說 | 白話文", "SWC"),
+    26: ("小說 | 白話文", "Cantonese"),
     27: ("新詩（節錄）", "New Poetry"),
     28: ("教學指南 | 書面語（粵語讀音）", "SWC"),
-    29: ("網頁內容 | 白話文", "SWC"),
-    30: ("百科全書 | 白話文", "SWC"),
+    29: ("網頁內容 | 白話文", "Cantonese"),
+    30: ("百科全書 | 白話文", "Cantonese"),
     31: ("古詩詞（1900年前寫作）", "Classical"),
     32: ("五言絕句全首 | 古詩詞（公元1900年前寫作）", "Classical"),
 }
@@ -204,7 +205,7 @@ def candidates_for_row(gray, templates, row_top, content_start, content_end):
             scores.reshape(1, -1), np.ones((1, 7), np.uint8)
         ).reshape(-1)
         threshold = MATCH_THRESHOLD_BY_TEMPLATE.get(template.name, MATCH_THRESHOLD)
-        if template.name == "l":
+        if template.name == "-":
             threshold = L_MATCH_THRESHOLD
         xs = np.where((scores >= threshold) & local_max)[0]
         for x in xs:
@@ -227,7 +228,7 @@ def ink_area(ink, row_top, start, end):
 
 
 def follows_whitespace(candidate, column_ink, content_start):
-    if candidate.template.name != "l":
+    if candidate.template.name != "-":
         return True
     if candidate.x <= content_start + 2:
         return True
@@ -260,36 +261,36 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
             return False
         previous = matches[-1].template.name if matches else None
         if (
-            candidate.template.name == "s"
+            candidate.template.name == "f"
             and candidate.score < NORMAL_S_MATCH_THRESHOLD
         ):
             return any(
-                item.template.name in {"c", "ϲ"}
+                item.template.name in {"0", "y"}
                 and candidate.end - 8 <= item.sequence_start <= candidate.end + 8
                 for item in candidates
             )
         if (
-            candidate.template.name == "6"
+            candidate.template.name == "p"
             and candidate.score < MATCH_THRESHOLD
         ):
-            if previous == "s":
+            if previous == "f":
                 return any(
-                    item.template.name == "i"
+                    item.template.name == "a"
                     and candidate.end - 8
                     <= item.sequence_start
                     <= candidate.end + 8
                     for item in candidates
                 )
-            if previous == "w":
+            if previous == "n":
                 return content_end - candidate.end <= 8
             return False
         if (
-            candidate.template.name == "ϲ"
+            candidate.template.name == "y"
             and candidate.score < 0.95
         ):
-            if previous == "s":
+            if previous == "f":
                 return candidate.score >= 0.93
-            return previous == "w"
+            return previous == "n"
         return True
 
     def begins_near_cursor(candidate):
@@ -298,8 +299,8 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         )
         previous = matches[-1].template.name if matches else None
         forward = 8
-        if candidate.template.name == "3" and previous == "r":
-            forward = FORWARD_TOLERANCE_BY_TEMPLATE["3"]
+        if candidate.template.name == "t" and previous == "+":
+            forward = FORWARD_TOLERANCE_BY_TEMPLATE["t"]
         return cursor - overlap <= candidate.sequence_start <= cursor + forward
 
     def residual_core_after(candidate):
@@ -344,17 +345,17 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         )
 
     def dot_family_variant(top, nearby):
-        if top.template.name in {"-", "z", "o"}:
+        if top.template.name in {"j", "d", "h"}:
             family = [
                 item
                 for item in nearby
-                if item.template.name in {"-", "z", "o"}
+                if item.template.name in {"j", "d", "h"}
                 and abs(item.sequence_start - top.sequence_start) <= 8
             ]
-            anchors = [item for item in family if item.template.name == "-"]
+            anchors = [item for item in family if item.template.name == "j"]
             if anchors:
                 anchor_x = max(anchors, key=lambda item: item.score).x
-            elif top.template.name == "o":
+            elif top.template.name == "h":
                 anchor_x = top.x + 4
             else:
                 anchor_x = top.x
@@ -365,18 +366,18 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 row_top + 74,
                 min_area=10,
             )
-            target = {0: "-", 1: "z"}.get(dot_count, "o")
-        elif top.template.name in {"k", "q", "#"}:
+            target = {0: "j", 1: "d"}.get(dot_count, "h")
+        elif top.template.name in {"g", "i", "k"}:
             family = [
                 item
                 for item in nearby
-                if item.template.name in {"k", "q", "#"}
+                if item.template.name in {"g", "i", "k"}
                 and abs(item.sequence_start - top.sequence_start) <= 5
             ]
-            anchors = [item for item in family if item.template.name == "#"]
+            anchors = [item for item in family if item.template.name == "k"]
             if anchors:
                 anchor_x = max(anchors, key=lambda item: item.score).x
-            elif top.template.name == "q":
+            elif top.template.name == "i":
                 anchor_x = top.x + 1
             else:
                 anchor_x = top.x + 5
@@ -388,7 +389,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 row_top + 84,
                 row_top + 104,
             )
-            target = {0: "k", 1: "q"}.get(dot_count, "#")
+            target = {0: "g", 1: "i"}.get(dot_count, "k")
         else:
             return None
 
@@ -422,7 +423,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         nearby.extend(
             candidate
             for candidate in candidates
-            if candidate.template.name == "z"
+            if candidate.template.name == "d"
             and cursor + 8 < candidate.sequence_start <= cursor + 12
             and candidate.end - cursor >= MIN_NEW_SYMBOL_WIDTH
             and eligible(candidate)
@@ -431,11 +432,11 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         nearby.extend(
             candidate
             for candidate in candidates
-            if candidate.template.name == "k"
+            if candidate.template.name == "g"
             and candidate.score >= 0.93
             and cursor + 8 < candidate.sequence_start <= cursor + 12
             and any(
-                item.template.name == "6"
+                item.template.name == "p"
                 and item.score >= MATCH_THRESHOLD
                 and item.sequence_start <= cursor + 8
                 and item.x <= candidate.x <= item.end
@@ -446,7 +447,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "l"
+                    if item.template.name == "-"
                     and begins_near_cursor(item)
                     and item.end - cursor >= MIN_NEW_SYMBOL_WIDTH
                     and eligible(item)
@@ -457,7 +458,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "6"
+                    if item.template.name == "p"
                     and item.score >= MATCH_THRESHOLD
                     and item.sequence_start <= cursor + 8
                     and item.x <= candidate.x <= item.end
@@ -469,7 +470,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "#"
+                    if item.template.name == "k"
                     and candidate.x + 3 <= item.x <= candidate.x + 7
                 ),
                 default=-1,
@@ -478,7 +479,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "q"
+                    if item.template.name == "i"
                     and candidate.x + 2 <= item.x <= candidate.x + 7
                 ),
                 default=-1,
@@ -542,7 +543,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 bar_z = [
                     candidate
                     for candidate in tied
-                    if candidate.template.name == "z"
+                    if candidate.template.name == "d"
                     and leaves_bar_residual(candidate)
                 ]
                 if top.template.name in CONTAINED_STROKE_TEMPLATES and bar_z:
@@ -868,11 +869,20 @@ def write_missing(candidates):
     )
 
 
+def reduce_encoded_sequences(encoded):
+    return (
+        encoded.replace("rf", "r")
+        .replace("gf", "f")
+        .replace("gx", "x")
+    )
+
+
 def write_encoded(days):
     with ENCODED_PATH.open("w") as handle:
         handle.write("# day<TAB>encoded string\n")
         handle.write("# / = source line break; ? = unmatched region\n")
         for day, encoded in days:
+            encoded = reduce_encoded_sequences(encoded)
             handle.write(f"{day}\t{encoded}\n")
     print(f"encoded strings: {ENCODED_PATH}")
 
@@ -932,6 +942,94 @@ def write_sequence_report(days):
             PASSAGE_METADATA[day][1] == genre for day in PASSAGE_METADATA
         )
         lines.append(f"| {genre} | {total} | {len(genre_days[genre])} |")
+
+    symbol_inventory = sorted(
+        set().union(
+            *(grams_by_day[day][1] for day in encoded_by_day)
+        )
+    )
+    symbol_frequencies = Counter()
+    for day in encoded_by_day:
+        symbol_frequencies.update(grams_by_day[day][1])
+    total_symbols = sum(symbol_frequencies.values())
+    frequency_rows = []
+    for symbol, occurrences in symbol_frequencies.most_common():
+        day_count = sum(
+            symbol in grams_by_day[day][1] for day in encoded_by_day
+        )
+        frequency_rows.append((symbol, occurrences, day_count))
+
+    lines.extend(
+        [
+            "",
+            "## Symbol frequency inventory",
+            "",
+            "Frequencies exclude whitespace and line separators. Images are "
+            "the current reference templates in `characters/`.",
+            "",
+            "| rank | image | code | occurrences | corpus share | days |",
+            "| ---: | --- | --- | ---: | ---: | ---: |",
+        ]
+    )
+    for rank, (symbol, occurrences, day_count) in enumerate(frequency_rows, 1):
+        template_path = CHARACTER_DIR / f"{symbol}.png"
+        if template_path.exists():
+            image_path = f"characters/{quote(symbol + '.png')}"
+            image_cell = f'<img src="{image_path}" alt="{symbol}" height="52">'
+        else:
+            image_cell = "manual correction (no template)"
+        share = 100 * occurrences / total_symbols
+        lines.append(
+            f"| {rank} | {image_cell} "
+            f"| `{symbol}` | {occurrences} | {share:.2f}% | {day_count} |"
+        )
+
+    repeating = []
+    non_repeating = []
+    for symbol in symbol_inventory:
+        pair = symbol * 2
+        occurrences = sum(
+            grams_by_day[day][2][pair] for day in encoded_by_day
+        )
+        days_with_pair = [
+            day
+            for day in sorted(encoded_by_day)
+            if grams_by_day[day][2][pair]
+        ]
+        if occurrences:
+            repeating.append((occurrences, symbol, days_with_pair))
+        else:
+            non_repeating.append(symbol)
+    repeating.sort(key=lambda item: (-item[0], item[1]))
+
+    lines.extend(
+        [
+            "",
+            "## Immediate symbol repetition",
+            "",
+            "A symbol is listed as repeating when its doubled sequence occurs "
+            "within a source line. ‘Not observed doubled’ is corpus evidence, "
+            "not proof that the writing system forbids the repetition.",
+            "",
+            "### Observed doubled",
+            "",
+            "| symbol | sequence | occurrences | days |",
+            "| --- | --- | ---: | --- |",
+        ]
+    )
+    for occurrences, symbol, days_with_pair in repeating:
+        day_list = ", ".join(str(day) for day in days_with_pair)
+        lines.append(
+            f"| `{symbol}` | `{symbol * 2}` | {occurrences} | {day_list} |"
+        )
+    lines.extend(
+        [
+            "",
+            "### Not observed doubled",
+            "",
+            ", ".join(f"`{symbol}`" for symbol in non_repeating) or "-",
+        ]
+    )
 
     active_genres = [genre for genre, genre_list in genre_days.items() if genre_list]
     lines.extend(["", "## Genre-distinctive sequences", ""])
@@ -1212,7 +1310,9 @@ def main():
         )
         missing.extend(day_missing)
         occurrences.extend(day_occurrences)
-        encoded_days.append((natural_key(path), encoded))
+        encoded_days.append(
+            (natural_key(path), reduce_encoded_sequences(encoded))
+        )
     write_missing(missing)
     write_encoded(encoded_days)
     write_metadata()
