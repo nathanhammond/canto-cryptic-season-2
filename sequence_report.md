@@ -33,14 +33,14 @@ Frequencies exclude whitespace and line separators. Images are the current refer
 | 12 | <img src="characters/i.png" alt="i" height="52"> | `i` | 290 | 3.55% | 31 |
 | 13 | <img src="characters/j.png" alt="j" height="52"> | `j` | 272 | 3.33% | 31 |
 | 14 | <img src="characters/k.png" alt="k" height="52"> | `k` | 252 | 3.09% | 30 |
-| 15 | <img src="characters/%2B.png" alt="+" height="52"> | `+` | 237 | 2.91% | 31 |
+| 15 | <img src="characters/%2B.png" alt="+" height="52"> | `+` | 237 | 2.90% | 31 |
 | 16 | <img src="characters/l.png" alt="l" height="52"> | `l` | 232 | 2.84% | 31 |
-| 17 | <img src="characters/f.png" alt="f" height="52"> | `f` | 215 | 2.64% | 31 |
+| 17 | <img src="characters/f.png" alt="f" height="52"> | `f` | 215 | 2.63% | 31 |
 | 18 | <img src="characters/5.png" alt="5" height="52"> | `5` | 178 | 2.18% | 30 |
 | 19 | <img src="characters/m.png" alt="m" height="52"> | `m` | 177 | 2.17% | 31 |
 | 20 | <img src="characters/n.png" alt="n" height="52"> | `n` | 176 | 2.16% | 30 |
 | 21 | <img src="characters/o.png" alt="o" height="52"> | `o` | 162 | 1.99% | 30 |
-| 22 | <img src="characters/p.png" alt="p" height="52"> | `p` | 125 | 1.53% | 31 |
+| 22 | <img src="characters/p.png" alt="p" height="52"> | `p` | 128 | 1.57% | 31 |
 | 23 | <img src="characters/%5B.png" alt="[" height="52"> | `[` | 120 | 1.47% | 29 |
 | 24 | <img src="characters/q.png" alt="q" height="52"> | `q` | 115 | 1.41% | 28 |
 | 25 | <img src="characters/r.png" alt="r" height="52"> | `r` | 112 | 1.37% | 28 |
@@ -255,7 +255,7 @@ A signature appears in exactly one passage in the corpus. The list prefers the s
 | 2 | New Poetry | `+u` (1), `5q` (1), `6d` (1), `qc` (1), `uu` (1), `+2q` (1), `+da` (1), `1i5` (1) |
 | 3 | SWC | `nn` (3), `+w` (1), `7p` (1), `cn` (1), `n]` (1), `nf` (1), `s0` (1), `tf` (1) |
 | 4 | Cantonese | `l1` (3), `hu` (2), `ql` (2), `!k` (1), `mf` (1), `nt` (1), `on` (1), `uc` (1) |
-| 5 | SWC | `[p` (1), `eg` (1), `mr` (1), `qf` (1), `uf` (1), `0os` (2), `11f` (2), `1hd` (2) |
+| 5 | SWC | `eg` (1), `mr` (1), `qf` (1), `uf` (1), `0os` (2), `11f` (2), `1hd` (2), `f40` (2) |
 | 6 | Cantonese | `gq` (1), `ng` (1), `op` (1), `po` (1), `qj` (1), `rg` (1), `ub` (1), `uo` (1) |
 | 7 | SWC | `b9` (1), `g6` (1), `jt` (1), `r+` (1), `s!` (1), `t3` (1), `tm` (1), `tq` (1) |
 | 8 | Classical | `+l` (1), `1l` (1), `3o` (1), `76` (1), `7b` (1), `7g` (1), `e7` (1), `el` (1) |
