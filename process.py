@@ -21,6 +21,7 @@ METADATA_PATH = Path("passages.csv")
 REPORT_PATH = Path("sequence_report.md")
 REVIEW_PATH = Path("symbol_review.html")
 REVIEW_EDITS_PATH = Path("symbol_review_edits.json")
+GROUND_TRUTH_PATH = Path("groundtruth_0724.txt")
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 TEMPLATE_HEIGHT = 163
 BASELINE_OFFSET = 77
@@ -42,6 +43,12 @@ MATCH_THRESHOLD_BY_TEMPLATE = {
 SCORE_TIE_TOLERANCE = 0.015
 NORMAL_S_MATCH_THRESHOLD = 0.70
 FULL_GLYPH_SCORE_MARGIN = 0.08
+MIN_FULL_GLYPH_EXTRA_WIDTH = 12
+FULL_GLYPH_ALTERNATIVES = {
+    "G": {"F", "X"},
+    "0": {"2"},
+}
+F_X_VARIANT_SCORE_MARGIN = 0.02
 MIN_NEW_SYMBOL_WIDTH = 12
 MIN_NEW_WIDTH_BY_TEMPLATE = {"M": 11, "!": 11}
 MIN_NEW_WIDTH_AFTER = {("[", "C"): 7}
@@ -92,8 +99,7 @@ PASSAGE_METADATA = {
     34: ("七言絕句 | 古詩詞 （1900年前）", "Classical"),
     35: ("新聞報道節錄 | 書面語", "SWC"),
     36: ("小說節錄｜書面語", "SWC"),
-    37: ("", ""),
-    # 33: ("", "")
+    37: ("", "Unclassified"),
 }
 
 
@@ -150,6 +156,16 @@ def color_for(image):
     return tuple(int(digest[index : index + 2], 16) for index in (0, 2, 4))
 
 
+def symbol_name(path):
+    """Return the encoded name for a template stored with a lowercase filename."""
+    return path.stem.upper() if path.stem.isalpha() else path.stem
+
+
+def template_path(symbol):
+    filename = symbol.lower() if symbol.isalpha() else symbol
+    return CHARACTER_DIR / f"{filename}.png"
+
+
 def load_templates():
     templates = []
     for path in sorted(CHARACTER_DIR.iterdir()):
@@ -162,7 +178,7 @@ def load_templates():
             raise ValueError(
                 f"template {path} has height {image.shape[0]}, expected {TEMPLATE_HEIGHT}"
             )
-        templates.append(Template(path.stem, image, color_for(image)))
+        templates.append(Template(symbol_name(path), image, color_for(image)))
     if not templates:
         raise ValueError("no templates found")
     return templates
@@ -313,7 +329,10 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         future_starts = [
             item.sequence_start
             for item in candidates
-            if item.sequence_start > candidate.end + 8 and eligible(item)
+            if item.sequence_start
+            > candidate.sequence_start + MIN_NEW_SYMBOL_WIDTH
+            and item.sequence_start >= candidate.end - MAX_TEMPLATE_OVERLAP
+            and eligible(item)
         ]
         next_x = min(future_starts, default=content_end)
         if next_x - candidate.end < 14:
@@ -512,6 +531,17 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 for candidate in complete
                 if not leaves_symbol_residual(candidate)
             ]
+            horizontal_full_glyphs = [
+                candidate
+                for candidate in nearby
+                if candidate.template.name
+                in FULL_GLYPH_ALTERNATIVES.get(top.template.name, set())
+                and candidate.end
+                >= top.end + MIN_FULL_GLYPH_EXTRA_WIDTH
+                and abs(candidate.sequence_start - top.sequence_start) <= 12
+                and candidate.score >= best_score - FULL_GLYPH_SCORE_MARGIN
+                and not leaves_symbol_residual(candidate)
+            ]
             aligned_at_line_start = [
                 candidate
                 for candidate in nearby
@@ -533,6 +563,46 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 and top.sequence_start < content_start - 8
             ):
                 best = max(aligned_at_line_start, key=lambda item: item.score)
+            elif horizontal_full_glyphs:
+                # G and 0 are high-confidence prefixes of the wider F/X and 2
+                # glyphs. When an aligned wider candidate explains the
+                # remaining ink and is reasonably close in score, prefer the
+                # complete horizontal span.
+                if top.template.name == "G":
+                    best_f = max(
+                        (
+                            candidate
+                            for candidate in horizontal_full_glyphs
+                            if candidate.template.name == "F"
+                        ),
+                        key=lambda item: item.score,
+                        default=None,
+                    )
+                    best_x = max(
+                        (
+                            candidate
+                            for candidate in horizontal_full_glyphs
+                            if candidate.template.name == "X"
+                        ),
+                        key=lambda item: item.score,
+                        default=None,
+                    )
+                    if (
+                        best_x is not None
+                        and (
+                            best_f is None
+                            or best_x.score
+                            >= best_f.score - F_X_VARIANT_SCORE_MARGIN
+                        )
+                    ):
+                        best = best_x
+                    else:
+                        best = best_f
+                else:
+                    best = max(
+                        horizontal_full_glyphs,
+                        key=lambda item: (item.end, item.score),
+                    )
             elif dotted_variant is not None:
                 best = dotted_variant
             elif leaves_symbol_residual(top) and complete_without_residual:
@@ -814,7 +884,10 @@ def process_puzzle(path, templates, review_edits, edit_stats):
         f"day {natural_key(path):>2}: lines={len(encoded_lines):>2} "
         f"matches={len(all_matches):>3} missing={len(all_missing):>2}"
     )
-    return all_missing, "/".join(encoded_lines), occurrences
+    # Whitespace between source lines can represent intentional indentation,
+    # but page-edge whitespace before the first/after the last symbol is only
+    # a content-boundary artifact.
+    return all_missing, "/".join(encoded_lines).strip(), occurrences
 
 
 def write_missing(candidates):
@@ -893,6 +966,68 @@ def write_encoded(days):
     print(f"encoded strings: {ENCODED_PATH}")
 
 
+def load_ground_truth():
+    expected = {}
+    for line_number, line in enumerate(
+        GROUND_TRUTH_PATH.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        if not line or line.startswith("#"):
+            continue
+        try:
+            day_text, encoded = line.split("\t", 1)
+            day = int(day_text)
+        except ValueError as error:
+            raise ValueError(
+                f"{GROUND_TRUTH_PATH}:{line_number}: expected day<TAB>encoding"
+            ) from error
+        if day in expected:
+            raise ValueError(f"{GROUND_TRUTH_PATH}:{line_number}: duplicate day {day}")
+        expected[day] = encoded
+    return expected
+
+
+def validate_ground_truth(days):
+    if not GROUND_TRUTH_PATH.exists():
+        return
+
+    expected = load_ground_truth()
+    actual = dict(days)
+    if expected.keys() != actual.keys():
+        missing_days = sorted(expected.keys() - actual.keys())
+        extra_days = sorted(actual.keys() - expected.keys())
+        raise ValueError(
+            f"ground-truth day mismatch: missing={missing_days}, extra={extra_days}"
+        )
+
+    mismatches = []
+    for day in expected:
+        if expected[day] == actual[day]:
+            continue
+        prefix = 0
+        limit = min(len(expected[day]), len(actual[day]))
+        while prefix < limit and expected[day][prefix] == actual[day][prefix]:
+            prefix += 1
+        left = max(0, prefix - 16)
+        right = prefix + 17
+        mismatches.append(
+            f"day {day} at offset {prefix}: "
+            f"expected {expected[day][left:right]!r}, "
+            f"got {actual[day][left:right]!r}"
+        )
+    if mismatches:
+        raise ValueError("ground-truth mismatch:\n" + "\n".join(mismatches))
+
+    symbol_count = sum(
+        character not in {"/", " "}
+        for encoded in expected.values()
+        for character in encoded
+    )
+    print(
+        f"ground truth: exact match across {len(expected)} days and "
+        f"{symbol_count} symbol positions; omissions=0 additions=0"
+    )
+
+
 def write_metadata():
     with METADATA_PATH.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, lineterminator="\n")
@@ -919,7 +1054,13 @@ def write_sequence_report(days):
     grams_by_day = {
         day: ngram_counts(encoded) for day, encoded in encoded_by_day.items()
     }
-    genre_order = ("SWC", "Cantonese", "New Poetry", "Classical")
+    genre_order = (
+        "SWC",
+        "Cantonese",
+        "New Poetry",
+        "Classical",
+        "Unclassified",
+    )
     genre_days = defaultdict(list)
     for day, encoded in encoded_by_day.items():
         if encoded:
@@ -979,9 +1120,9 @@ def write_sequence_report(days):
         ]
     )
     for rank, (symbol, occurrences, day_count) in enumerate(frequency_rows, 1):
-        template_path = CHARACTER_DIR / f"{symbol}.png"
-        if template_path.exists():
-            image_path = f"characters/{quote(symbol + '.png')}"
+        symbol_template_path = template_path(symbol)
+        if symbol_template_path.exists():
+            image_path = f"characters/{quote(symbol_template_path.name)}"
             image_cell = f'<img src="{image_path}" alt="{symbol}" height="52">'
         else:
             image_cell = "manual correction (no template)"
@@ -1005,7 +1146,9 @@ def write_sequence_report(days):
             "the other categories and uses add-0.5 rate smoothing; positive "
             "values indicate category enrichment.",
             "",
-            "| n | corpus tokens | distinct types | SWC tokens | Cantonese tokens | New Poetry tokens | Classical tokens |",
+            "| n | corpus tokens | distinct types | "
+            + " | ".join(f"{genre} tokens" for genre in genre_order)
+            + " |",
             "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
@@ -1046,7 +1189,9 @@ def write_sequence_report(days):
                 "",
                 f"### {length}-grams",
                 "",
-                "| rank | sequence | corpus | SWC | Cantonese | New Poetry | Classical |",
+                "| rank | sequence | corpus | "
+                + " | ".join(genre_order)
+                + " |",
                 "| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
@@ -1352,7 +1497,7 @@ let activeItem=null;
 let edits={};
 try{edits=JSON.parse(localStorage.getItem(storageKey)||"{}")||{}}catch{edits={}}
 const itemKey=item=>`${item.day}:${item.line}:${item.position}`;
-const templateUrl=symbol=>`characters/${encodeURIComponent(symbol)}.png`;
+const templateUrl=symbol=>`characters/${encodeURIComponent(/^[A-Z]$/.test(symbol)?symbol.toLowerCase():symbol)}.png`;
 const decisionLabel=value=>value==="__missing__"?"missing symbol":value==="__segmentation__"?"segmentation / no symbol":`replace with ${value}`;
 const symbolCounts=new Map();for(const item of occurrences)symbolCounts.set(item.symbol,(symbolCounts.get(item.symbol)||0)+1);
 const symbolOrder=[...symbolCounts.keys()].sort((a,b)=>a.localeCompare(b,"en"));
@@ -1409,6 +1554,7 @@ def main():
         encoded_days.append(
             (natural_key(path), reduce_encoded_sequences(encoded))
         )
+    validate_ground_truth(encoded_days)
     write_missing(missing)
     write_encoded(encoded_days)
     write_metadata()
