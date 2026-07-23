@@ -899,13 +899,12 @@ def write_metadata():
 
 def ngram_counts(encoded):
     counts = {length: Counter() for length in range(1, 7)}
-    for line in encoded.split("/"):
-        symbols = "".join(line.split())
-        for length in range(1, 7):
-            counts[length].update(
-                symbols[index : index + length]
-                for index in range(len(symbols) - length + 1)
-            )
+    symbols = "".join(encoded.replace("/", "").split())
+    for length in range(1, 7):
+        counts[length].update(
+            symbols[index : index + length]
+            for index in range(len(symbols) - length + 1)
+        )
     return counts
 
 
@@ -914,6 +913,7 @@ def write_sequence_report(days):
     grams_by_day = {
         day: ngram_counts(encoded) for day, encoded in encoded_by_day.items()
     }
+    genre_order = ("SWC", "Cantonese", "New Poetry", "Classical")
     genre_days = defaultdict(list)
     for day, encoded in encoded_by_day.items():
         if encoded:
@@ -922,10 +922,11 @@ def write_sequence_report(days):
     lines = [
         "# Distinctive symbol-sequence report",
         "",
-        "This report treats each cipher line independently, removes encoded "
-        "whitespace, and counts every contiguous sequence from one through six "
-        "symbols. Day 16 is retained in the metadata but excluded from sequence "
-        "statistics because it has no cipher text.",
+        "This report removes encoded whitespace and `/` line markers, then "
+        "counts every contiguous sequence from one through six symbols within "
+        "each passage. Sequences may cross source-line boundaries but never day "
+        "boundaries. Day 16 is retained in the metadata but excluded from "
+        "sequence statistics because it has no cipher text.",
         "",
         "Genre distinctiveness uses passage prevalence rather than raw length: "
         "a sequence must occur in at least two passages of the target genre and "
@@ -937,7 +938,7 @@ def write_sequence_report(days):
         "| lang | passages | passages with symbols |",
         "| --- | ---: | ---: |",
     ]
-    for genre in ("SWC", "Cantonese", "New Poetry", "Classical"):
+    for genre in genre_order:
         total = sum(
             PASSAGE_METADATA[day][1] == genre for day in PASSAGE_METADATA
         )
@@ -984,6 +985,94 @@ def write_sequence_report(days):
             f"| `{symbol}` | {occurrences} | {share:.2f}% | {day_count} |"
         )
 
+    lines.extend(
+        [
+            "",
+            "## N-gram token frequencies by category",
+            "",
+            "These complete inventories count contiguous sequences after `/` "
+            "line markers are removed, so n-grams may cross source-line "
+            "boundaries. Corpus cells show "
+            "`count (share of all corpus n-gram tokens)`. Category cells show "
+            "`count (share of that category's n-gram tokens; log₂ lift)`. The "
+            "lift compares the category's token rate with the combined rate in "
+            "the other categories and uses add-0.5 rate smoothing; positive "
+            "values indicate category enrichment.",
+            "",
+            "| n | corpus tokens | distinct types | SWC tokens | Cantonese tokens | New Poetry tokens | Classical tokens |",
+            "| ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    ngram_frequency_data = {}
+    for length in range(2, 6):
+        corpus_counts = Counter()
+        category_counts = {genre: Counter() for genre in genre_order}
+        for day in encoded_by_day:
+            corpus_counts.update(grams_by_day[day][length])
+            genre = PASSAGE_METADATA[day][1]
+            category_counts[genre].update(grams_by_day[day][length])
+        corpus_tokens = sum(corpus_counts.values())
+        category_tokens = {
+            genre: sum(category_counts[genre].values())
+            for genre in genre_order
+        }
+        ngram_frequency_data[length] = (
+            corpus_counts,
+            corpus_tokens,
+            category_counts,
+            category_tokens,
+        )
+        lines.append(
+            f"| {length} | {corpus_tokens} | {len(corpus_counts)} | "
+            + " | ".join(str(category_tokens[genre]) for genre in genre_order)
+            + " |"
+        )
+
+    for length in range(2, 6):
+        (
+            corpus_counts,
+            corpus_tokens,
+            category_counts,
+            category_tokens,
+        ) = ngram_frequency_data[length]
+        lines.extend(
+            [
+                "",
+                f"### {length}-grams",
+                "",
+                "| rank | sequence | corpus | SWC | Cantonese | New Poetry | Classical |",
+                "| ---: | --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        ranked = sorted(
+            corpus_counts.items(), key=lambda item: (-item[1], item[0])
+        )
+        for rank, (sequence, corpus_count) in enumerate(ranked, 1):
+            corpus_pct = 100 * corpus_count / corpus_tokens
+            category_cells = []
+            for genre in genre_order:
+                category_count = category_counts[genre][sequence]
+                target_tokens = category_tokens[genre]
+                other_count = corpus_count - category_count
+                other_tokens = corpus_tokens - target_tokens
+                target_rate = (category_count + 0.5) / (
+                    target_tokens + 1
+                )
+                other_rate = (other_count + 0.5) / (
+                    other_tokens + 1
+                )
+                lift = math.log2(target_rate / other_rate)
+                category_pct = 100 * category_count / target_tokens
+                category_cells.append(
+                    f"{category_count} ({category_pct:.3f}%; {lift:+.2f})"
+                )
+            lines.append(
+                f"| {rank} | `{sequence}` | "
+                f"{corpus_count} ({corpus_pct:.3f}%) | "
+                + " | ".join(category_cells)
+                + " |"
+            )
+
     repeating = []
     non_repeating = []
     for symbol in symbol_inventory:
@@ -1008,8 +1097,9 @@ def write_sequence_report(days):
             "## Immediate symbol repetition",
             "",
             "A symbol is listed as repeating when its doubled sequence occurs "
-            "within a source line. ‘Not observed doubled’ is corpus evidence, "
-            "not proof that the writing system forbids the repetition.",
+            "within a passage after `/` line markers are removed. ‘Not observed "
+            "doubled’ is corpus evidence, not proof that the writing system "
+            "forbids the repetition.",
             "",
             "### Observed doubled",
             "",
@@ -1036,7 +1126,7 @@ def write_sequence_report(days):
     if len(active_genres) < 2:
         lines.append("At least two non-empty genres are required for comparison.")
     else:
-        for genre in ("SWC", "Cantonese", "New Poetry", "Classical"):
+        for genre in genre_order:
             target_days = genre_days[genre]
             if not target_days:
                 lines.extend(
