@@ -3,72 +3,72 @@
     "day": 9,
     "line": 7,
     "position": 21,
-    "context": "v2of0cc",
-    "from": "f",
-    "to": "u"
+    "context": "V2OF0CC",
+    "from": "F",
+    "to": "Y"
   },
   {
     "day": 18,
     "line": 7,
     "position": 23,
-    "context": "+tgfy1a",
-    "from": "f",
+    "context": "+TGFY1A",
+    "from": "F",
     "to": "__segmentation__"
   },
   {
     "day": 12,
     "line": 2,
     "position": 10,
-    "context": "egf[0b4",
+    "context": "EGF[0B4",
     "from": "[",
-    "to": "u"
+    "to": "Y"
   },
   {
     "day": 20,
     "line": 6,
     "position": 17,
-    "context": "deb[0n6",
+    "context": "DEB[0N6",
     "from": "[",
-    "to": "u"
+    "to": "Y"
   },
   {
     "day": 5,
     "line": 6,
     "position": 9,
-    "context": "3a[mr]d",
-    "from": "m",
+    "context": "3A[MR]D",
+    "from": "M",
     "to": "__segmentation__"
   },
   {
     "day": 7,
     "line": 5,
     "position": 21,
-    "context": "b10uvob",
-    "from": "u",
+    "context": "B10VOB",
+    "from": "Y",
     "to": "["
   },
   {
     "day": 7,
     "line": 1,
     "position": 1,
-    "context": "ue2p",
-    "from": "u",
+    "context": "YE2P",
+    "from": "Y",
     "to": "["
   },
   {
     "day": 7,
     "line": 12,
     "position": 3,
-    "context": "e3pifj",
-    "from": "p",
+    "context": "E3PIFJ",
+    "from": "P",
     "to": "__segmentation__"
   },
   {
     "day": 29,
     "line": 2,
     "position": 1,
-    "context": "pgfd",
-    "from": "p",
+    "context": "PGFD",
+    "from": "P",
     "to": "__segmentation__"
   }
 ]

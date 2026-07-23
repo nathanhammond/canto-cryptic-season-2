@@ -27,30 +27,30 @@ BASELINE_OFFSET = 77
 MATCH_THRESHOLD = 0.76
 L_MATCH_THRESHOLD = 0.55
 MATCH_THRESHOLD_BY_TEMPLATE = {
-    "q": 0.74,
-    "p": 0.60,
-    "w": 0.74,
-    "u": 0.70,
-    "l": 0.68,
-    "e": 0.67,
+    "Q": 0.74,
+    "P": 0.60,
+    "W": 0.74,
+    "Y": 0.70,
+    "L": 0.68,
+    "E": 0.67,
     "[": 0.70,
-    "f": 0.57,
-    "m": 0.72,
-    "n": 0.74,
-    "y": 0.81,
+    "F": 0.57,
+    "M": 0.72,
+    "N": 0.74,
+    ")": 0.81,
 }
 SCORE_TIE_TOLERANCE = 0.015
 NORMAL_S_MATCH_THRESHOLD = 0.70
 FULL_GLYPH_SCORE_MARGIN = 0.08
 MIN_NEW_SYMBOL_WIDTH = 12
-MIN_NEW_WIDTH_BY_TEMPLATE = {"m": 11, "!": 11}
-MIN_NEW_WIDTH_AFTER = {("[", "c"): 7}
-OVERLAP_PREFIX_AFTER = {("[", "m"), ("[", "c")}
-CONTAINED_STROKE_TEMPLATES = {"j", "d"}
-FORWARD_TOLERANCE_BY_TEMPLATE = {"t": 10}
+MIN_NEW_WIDTH_BY_TEMPLATE = {"M": 11, "!": 11}
+MIN_NEW_WIDTH_AFTER = {("[", "C"): 7}
+OVERLAP_PREFIX_AFTER = {("[", "M"), ("[", "C")}
+CONTAINED_STROKE_TEMPLATES = {"J", "D"}
+FORWARD_TOLERANCE_BY_TEMPLATE = {"T": 10}
 MAX_TEMPLATE_OVERLAP = 24
-LEFT_SHARED_STROKE_BY_TEMPLATE = {"l": 8, "t": 20}
-LEFT_OVERLAP_TOLERANCE_BY_TEMPLATE = {"l": 12, "t": 8}
+LEFT_SHARED_STROKE_BY_TEMPLATE = {"L": 8, "T": 20}
+LEFT_OVERLAP_TOLERANCE_BY_TEMPLATE = {"L": 12, "T": 8}
 L_WHITESPACE_WIDTH = 8
 MISSING_CONTEXT = 24
 MAX_REVIEW_CANDIDATES = 32
@@ -88,6 +88,12 @@ PASSAGE_METADATA = {
     30: ("百科全書 | 白話文", "Cantonese"),
     31: ("古詩詞（1900年前寫作）", "Classical"),
     32: ("五言絕句全首 | 古詩詞（公元1900年前寫作）", "Classical"),
+    33: ("戲劇譯本 (節錄) | 書面語 （粵語讀音 | 原文於公元1900前寫作 ）", "SWC"),
+    34: ("七言絕句 | 古詩詞 （1900年前）", "Classical"),
+    35: ("新聞報道節錄 | 書面語", "SWC"),
+    36: ("小說節錄｜書面語", "SWC"),
+    37: ("", ""),
+    # 33: ("", "")
 }
 
 
@@ -261,36 +267,36 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
             return False
         previous = matches[-1].template.name if matches else None
         if (
-            candidate.template.name == "f"
+            candidate.template.name == "F"
             and candidate.score < NORMAL_S_MATCH_THRESHOLD
         ):
             return any(
-                item.template.name in {"0", "y"}
+                item.template.name in {"0", "("}
                 and candidate.end - 8 <= item.sequence_start <= candidate.end + 8
                 for item in candidates
             )
         if (
-            candidate.template.name == "p"
+            candidate.template.name == "P"
             and candidate.score < MATCH_THRESHOLD
         ):
-            if previous == "f":
+            if previous == "F":
                 return any(
-                    item.template.name == "a"
+                    item.template.name == "A"
                     and candidate.end - 8
                     <= item.sequence_start
                     <= candidate.end + 8
                     for item in candidates
                 )
-            if previous == "n":
+            if previous == "N":
                 return content_end - candidate.end <= 8
             return False
         if (
-            candidate.template.name == "y"
+            candidate.template.name == "("
             and candidate.score < 0.95
         ):
-            if previous == "f":
+            if previous == "F":
                 return candidate.score >= 0.93
-            return previous == "n"
+            return previous == "N"
         return True
 
     def begins_near_cursor(candidate):
@@ -299,8 +305,8 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         )
         previous = matches[-1].template.name if matches else None
         forward = 8
-        if candidate.template.name == "t" and previous == "+":
-            forward = FORWARD_TOLERANCE_BY_TEMPLATE["t"]
+        if candidate.template.name == "T" and previous == "+":
+            forward = FORWARD_TOLERANCE_BY_TEMPLATE["T"]
         return cursor - overlap <= candidate.sequence_start <= cursor + forward
 
     def residual_core_after(candidate):
@@ -345,17 +351,17 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         )
 
     def dot_family_variant(top, nearby):
-        if top.template.name in {"j", "d", "h"}:
+        if top.template.name in {"J", "D", "H"}:
             family = [
                 item
                 for item in nearby
-                if item.template.name in {"j", "d", "h"}
+                if item.template.name in {"J", "D", "H"}
                 and abs(item.sequence_start - top.sequence_start) <= 8
             ]
-            anchors = [item for item in family if item.template.name == "j"]
+            anchors = [item for item in family if item.template.name == "J"]
             if anchors:
                 anchor_x = max(anchors, key=lambda item: item.score).x
-            elif top.template.name == "h":
+            elif top.template.name == "H":
                 anchor_x = top.x + 4
             else:
                 anchor_x = top.x
@@ -366,18 +372,18 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 row_top + 74,
                 min_area=10,
             )
-            target = {0: "j", 1: "d"}.get(dot_count, "h")
-        elif top.template.name in {"g", "i", "k"}:
+            target = {0: "J", 1: "D"}.get(dot_count, "H")
+        elif top.template.name in {"G", "I", "K"}:
             family = [
                 item
                 for item in nearby
-                if item.template.name in {"g", "i", "k"}
+                if item.template.name in {"G", "I", "K"}
                 and abs(item.sequence_start - top.sequence_start) <= 5
             ]
-            anchors = [item for item in family if item.template.name == "k"]
+            anchors = [item for item in family if item.template.name == "K"]
             if anchors:
                 anchor_x = max(anchors, key=lambda item: item.score).x
-            elif top.template.name == "i":
+            elif top.template.name == "I":
                 anchor_x = top.x + 1
             else:
                 anchor_x = top.x + 5
@@ -389,7 +395,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 row_top + 84,
                 row_top + 104,
             )
-            target = {0: "g", 1: "i"}.get(dot_count, "k")
+            target = {0: "G", 1: "I"}.get(dot_count, "K")
         else:
             return None
 
@@ -423,7 +429,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         nearby.extend(
             candidate
             for candidate in candidates
-            if candidate.template.name == "d"
+            if candidate.template.name == "D"
             and cursor + 8 < candidate.sequence_start <= cursor + 12
             and candidate.end - cursor >= MIN_NEW_SYMBOL_WIDTH
             and eligible(candidate)
@@ -432,11 +438,11 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
         nearby.extend(
             candidate
             for candidate in candidates
-            if candidate.template.name == "g"
+            if candidate.template.name == "G"
             and candidate.score >= 0.93
             and cursor + 8 < candidate.sequence_start <= cursor + 12
             and any(
-                item.template.name == "p"
+                item.template.name == "P"
                 and item.score >= MATCH_THRESHOLD
                 and item.sequence_start <= cursor + 8
                 and item.x <= candidate.x <= item.end
@@ -458,7 +464,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "p"
+                    if item.template.name == "P"
                     and item.score >= MATCH_THRESHOLD
                     and item.sequence_start <= cursor + 8
                     and item.x <= candidate.x <= item.end
@@ -470,7 +476,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "k"
+                    if item.template.name == "K"
                     and candidate.x + 3 <= item.x <= candidate.x + 7
                 ),
                 default=-1,
@@ -479,7 +485,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 (
                     item.score
                     for item in candidates
-                    if item.template.name == "i"
+                    if item.template.name == "I"
                     and candidate.x + 2 <= item.x <= candidate.x + 7
                 ),
                 default=-1,
@@ -543,7 +549,7 @@ def greedy_row(candidates, ink, row_top, content_start, content_end):
                 bar_z = [
                     candidate
                     for candidate in tied
-                    if candidate.template.name == "d"
+                    if candidate.template.name == "D"
                     and leaves_bar_residual(candidate)
                 ]
                 if top.template.name in CONTAINED_STROKE_TEMPLATES and bar_z:
